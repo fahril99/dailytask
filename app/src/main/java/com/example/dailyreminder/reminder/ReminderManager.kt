@@ -54,6 +54,7 @@ object ReminderManager {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra("TASK_ID", task.id)
             putExtra("TASK_TITLE", task.title)
+            if (task.description != null) putExtra("TASK_DESC", task.description)
             putExtra("NOTIFICATION_ID", requestCode)
         }
 

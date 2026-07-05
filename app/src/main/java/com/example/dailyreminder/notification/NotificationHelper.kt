@@ -28,7 +28,7 @@ object NotificationHelper {
         }
     }
 
-    fun showNotification(context: Context, taskId: String, taskTitle: String, notificationId: Int) {
+    fun showNotification(context: Context, taskId: String, taskTitle: String, taskDescription: String?, notificationId: Int) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("SHOW_TASK_DIALOG", taskId)
@@ -41,10 +41,17 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val text = if (!taskDescription.isNullOrEmpty()) {
+            "Saatnya melakukan $taskDescription.\nKlik untuk membuka aplikasi."
+        } else {
+            "Saatnya melakukan $taskTitle.\nKlik untuk membuka aplikasi."
+        }
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("⏰ Waktunya $taskTitle")
-            .setContentText("Klik untuk membuka aplikasi.")
+            .setContentTitle("⏰ $taskTitle")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

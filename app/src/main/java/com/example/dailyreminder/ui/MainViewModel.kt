@@ -18,14 +18,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _tasks = MutableStateFlow<List<TaskItem>>(emptyList())
     val tasks: StateFlow<List<TaskItem>> = _tasks.asStateFlow()
 
+    private val _scheduleText = MutableStateFlow("")
+    val scheduleText: StateFlow<String> = _scheduleText.asStateFlow()
+
     init {
         viewModelScope.launch {
             taskRepository.checkAndResetDailyTasks()
             
-            taskRepository.tasksFlow.collect { taskList ->
-                _tasks.value = taskList
-                ReminderManager.scheduleAllTasks(getApplication(), taskList)
+            launch {
+                taskRepository.scheduleTextFlow.collect { text ->
+                    _scheduleText.value = text
+                }
             }
+            
+            launch {
+                taskRepository.tasksFlow.collect { taskList ->
+                    _tasks.value = taskList
+                    ReminderManager.scheduleAllTasks(getApplication(), taskList)
+                }
+            }
+        }
+    }
+
+    fun saveSchedule(text: String) {
+        viewModelScope.launch {
+            taskRepository.setScheduleText(text)
         }
     }
 

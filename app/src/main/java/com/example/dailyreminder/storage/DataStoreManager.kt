@@ -16,6 +16,7 @@ class DataStoreManager(private val context: Context) {
     companion object {
         val COMPLETED_TASKS_KEY = stringSetPreferencesKey("completed_tasks")
         val LAST_DATE_KEY = stringPreferencesKey("last_date")
+        val SCHEDULE_TEXT_KEY = stringPreferencesKey("schedule_text")
     }
 
     val completedTasks: Flow<Set<String>> = context.dataStore.data.map { prefs ->
@@ -24,6 +25,10 @@ class DataStoreManager(private val context: Context) {
 
     val lastDate: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[LAST_DATE_KEY]
+    }
+    
+    val scheduleText: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[SCHEDULE_TEXT_KEY] ?: ""
     }
 
     suspend fun setTaskCompleted(taskId: String, isCompleted: Boolean) {
@@ -47,6 +52,12 @@ class DataStoreManager(private val context: Context) {
     suspend fun setLastDate(dateString: String) {
         context.dataStore.edit { prefs ->
             prefs[LAST_DATE_KEY] = dateString
+        }
+    }
+
+    suspend fun setScheduleText(text: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SCHEDULE_TEXT_KEY] = text
         }
     }
 }

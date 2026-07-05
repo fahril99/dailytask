@@ -3,6 +3,7 @@ package com.example.dailyreminder.model
 data class TaskItem(
     val id: String,
     val title: String,
+    val description: String? = null,
     val hour: Int,
     val minute: Int,
     var isCompleted: Boolean = false

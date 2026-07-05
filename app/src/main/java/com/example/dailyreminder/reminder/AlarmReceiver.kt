@@ -14,6 +14,7 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra("TASK_ID") ?: return
         val taskTitle = intent.getStringExtra("TASK_TITLE") ?: return
+        val taskDesc = intent.getStringExtra("TASK_DESC")
         val notificationId = intent.getIntExtra("NOTIFICATION_ID", 0)
         
         val dataStoreManager = DataStoreManager(context)
@@ -22,7 +23,7 @@ class AlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             val task = taskRepository.getTaskById(taskId)
             if (task != null && !task.isCompleted) {
-                NotificationHelper.showNotification(context, taskId, taskTitle, notificationId)
+                NotificationHelper.showNotification(context, taskId, taskTitle, taskDesc, notificationId)
             }
         }
     }
