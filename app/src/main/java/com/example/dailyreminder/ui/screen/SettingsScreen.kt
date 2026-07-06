@@ -8,12 +8,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SelfImprovement
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,33 +27,15 @@ fun SettingsScreen(
     soundEnabled: Boolean,
     vibrationEnabled: Boolean,
     stagedRemindersEnabled: Boolean,
-    customSoundUri: String?,
 
     scheduleText: String,
     onSoundToggle: (Boolean) -> Unit,
     onVibrationToggle: (Boolean) -> Unit,
     onStagedRemindersToggle: (Boolean) -> Unit,
-    onCustomSoundUriSelected: (String?) -> Unit,
 
     onEditSchedule: () -> Unit,
     onShowOptimizationGuide: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-                onCustomSoundUriSelected(uri.toString())
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -97,22 +75,6 @@ fun SettingsScreen(
                 checked = soundEnabled,
                 onToggle = onSoundToggle
             )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DividerDark)
-            SettingsClickableItem(
-                icon = Icons.Default.LibraryMusic,
-                title = "Upload MP3",
-                subtitle = if (customSoundUri.isNullOrEmpty()) "Pilih file MP3 khusus" else "MP3 Kustom Aktif",
-                onClick = { launcher.launch(arrayOf("audio/*")) }
-            )
-            if (!customSoundUri.isNullOrEmpty()) {
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DividerDark)
-                SettingsClickableItem(
-                    icon = Icons.Default.LibraryMusic,
-                    title = "Hapus MP3 Kustom",
-                    subtitle = "Ganti kembali ke suara default",
-                    onClick = { onCustomSoundUriSelected(null) }
-                )
-            }
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DividerDark)
             SettingsToggleItem(
                 icon = Icons.Default.Notifications,

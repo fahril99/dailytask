@@ -63,7 +63,6 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 val soundEnabled = dataStoreManager.soundEnabled.first()
                 val vibrationEnabled = dataStoreManager.vibrationEnabled.first()
-                val customSoundUri = dataStoreManager.customSoundUri.first()
 
                 NotificationHelper.showTaskNotification(
                     context = context,
@@ -72,8 +71,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     taskDescription = taskDesc,
                     notificationId = notificationId,
                     soundEnabled = soundEnabled,
-                    vibrationEnabled = vibrationEnabled,
-                    customSoundUri = customSoundUri
+                    vibrationEnabled = vibrationEnabled
                 )
 
                 Log.d(TAG, "Notification Sent for '${task.title}'")

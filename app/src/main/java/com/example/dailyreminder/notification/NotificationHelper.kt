@@ -23,22 +23,19 @@ object NotificationHelper {
 
     private fun getDynamicChannelId(
         soundEnabled: Boolean,
-        vibrationEnabled: Boolean,
-        customSoundUri: String?
+        vibrationEnabled: Boolean
     ): String {
         if (!soundEnabled && !vibrationEnabled) {
             return "daily_reminder_silent"
         }
-        val hash = customSoundUri?.hashCode() ?: "default".hashCode()
-        return "reminder_${soundEnabled}_${vibrationEnabled}_$hash"
+        return "reminder_${soundEnabled}_${vibrationEnabled}"
     }
 
     private fun createChannelIfNeeded(
         context: Context,
         channelId: String,
         soundEnabled: Boolean,
-        vibrationEnabled: Boolean,
-        customSoundUri: String?
+        vibrationEnabled: Boolean
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -66,11 +63,7 @@ object NotificationHelper {
                 }
 
                 if (soundEnabled) {
-                    val soundUri: Uri = if (!customSoundUri.isNullOrEmpty()) {
-                        Uri.parse(customSoundUri)
-                    } else {
-                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                    }
+                    val soundUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                     val audioAttributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -95,8 +88,7 @@ object NotificationHelper {
         taskDescription: String?,
         notificationId: Int,
         soundEnabled: Boolean,
-        vibrationEnabled: Boolean,
-        customSoundUri: String? = null
+        vibrationEnabled: Boolean
     ) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -117,8 +109,8 @@ object NotificationHelper {
             "Saatnya melakukan $taskTitle.\nKlik untuk membuka aplikasi."
         }
 
-        val channelId = getDynamicChannelId(soundEnabled, vibrationEnabled, customSoundUri)
-        createChannelIfNeeded(context, channelId, soundEnabled, vibrationEnabled, customSoundUri)
+        val channelId = getDynamicChannelId(soundEnabled, vibrationEnabled)
+        createChannelIfNeeded(context, channelId, soundEnabled, vibrationEnabled)
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -135,11 +127,7 @@ object NotificationHelper {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             if (soundEnabled) {
-                val soundUri: Uri = if (!customSoundUri.isNullOrEmpty()) {
-                    Uri.parse(customSoundUri)
-                } else {
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                }
+                val soundUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 builder.setSound(soundUri)
             } else {
                 builder.setSound(null)

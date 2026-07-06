@@ -63,9 +63,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _stagedRemindersEnabled = MutableStateFlow(true)
     val stagedRemindersEnabled: StateFlow<Boolean> = _stagedRemindersEnabled.asStateFlow()
 
-    private val _customSoundUri = MutableStateFlow<String?>(null)
-    val customSoundUri: StateFlow<String?> = _customSoundUri.asStateFlow()
-
     // Flag: true when the initial load+schedule has been done for this session
     private var initialScheduleDone = false
 
@@ -102,7 +99,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch { taskRepository.soundEnabled.collect { _soundEnabled.value = it } }
             launch { taskRepository.vibrationEnabled.collect { _vibrationEnabled.value = it } }
             launch { taskRepository.stagedRemindersEnabled.collect { _stagedRemindersEnabled.value = it } }
-            launch { taskRepository.customSoundUri.collect { _customSoundUri.value = it } }
         }
     }
 
@@ -168,10 +164,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val tasks = taskRepository.getAllTasksOnce()
             ReminderManager.scheduleAllTasks(getApplication(), tasks, enabled)
         }
-    }
-
-    fun updateCustomSoundUri(uri: String?) {
-        viewModelScope.launch { taskRepository.setCustomSoundUri(uri) }
     }
 
     // ---- UI helpers ----
