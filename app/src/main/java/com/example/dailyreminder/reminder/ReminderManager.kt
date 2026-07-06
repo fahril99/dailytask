@@ -51,7 +51,7 @@ object ReminderManager {
             val triggerAt = buildTriggerTime(task.hour, task.minute, offsetMinutes)
             val requestCode = buildRequestCode(task.id, index)
             setExactAlarm(context, triggerAt, task, requestCode)
-            Log.d(TAG, "Scheduled alarm for '${task.title}' offset=${offsetMinutes}min at ${java.util.Date(triggerAt)}")
+            Log.d(TAG, "Alarm Scheduled for '${task.title}' offset=${offsetMinutes}min at ${java.util.Date(triggerAt)}")
         }
     }
 
@@ -62,7 +62,7 @@ object ReminderManager {
         val triggerAt = System.currentTimeMillis() + 5L * 60_000L
         val requestCode = buildSnoozeRequestCode(task.id)
         setExactAlarm(context, triggerAt, task, requestCode)
-        Log.d(TAG, "Snooze alarm for '${task.title}' at ${java.util.Date(triggerAt)}")
+        Log.d(TAG, "Alarm Scheduled (Snooze) for '${task.title}' at ${java.util.Date(triggerAt)}")
     }
 
     /**

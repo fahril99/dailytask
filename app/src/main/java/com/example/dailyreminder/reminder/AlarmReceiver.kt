@@ -42,7 +42,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val taskDesc = intent.getStringExtra("TASK_DESC")
         val notificationId = intent.getIntExtra("NOTIFICATION_ID", taskId.hashCode())
 
-        Log.d(TAG, "onReceive: taskId=$taskId, notificationId=$notificationId")
+        Log.d(TAG, "Alarm Received: taskId=$taskId, notificationId=$notificationId")
 
         // Use a SupervisorJob so a failure doesn't cancel other coroutines.
         // goAsync() would be ideal but increases complexity; DataStore reads are fast.
@@ -80,7 +80,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     vibrationEnabled = vibrationEnabled
                 )
 
-                Log.d(TAG, "Notification shown for '${task.title}'")
+                Log.d(TAG, "Notification Sent for '${task.title}'")
             } catch (e: Exception) {
                 Log.e(TAG, "Error in AlarmReceiver coroutine: ${e.message}", e)
             } finally {
