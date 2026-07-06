@@ -25,6 +25,7 @@ class DataStoreManager(private val context: Context) {
         val SOUND_ENABLED_KEY = booleanPreferencesKey("sound_enabled")
         val VIBRATION_ENABLED_KEY = booleanPreferencesKey("vibration_enabled")
         val STAGED_REMINDERS_KEY = booleanPreferencesKey("staged_reminders")
+        val CUSTOM_SOUND_URI_KEY = stringPreferencesKey("custom_sound_uri")
 
     }
 
@@ -62,7 +63,9 @@ class DataStoreManager(private val context: Context) {
         prefs[STAGED_REMINDERS_KEY] ?: true
     }
 
-
+    val customSoundUri: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[CUSTOM_SOUND_URI_KEY]
+    }
 
     // --- Task completion ---
 
@@ -134,10 +137,20 @@ class DataStoreManager(private val context: Context) {
     }
 
     suspend fun setStagedRemindersEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs -> prefs[STAGED_REMINDERS_KEY] = enabled }
+        context.dataStore.edit { prefs ->
+            prefs[STAGED_REMINDERS_KEY] = enabled
+        }
     }
 
-
+    suspend fun setCustomSoundUri(uri: String?) {
+        context.dataStore.edit { prefs ->
+            if (uri == null) {
+                prefs.remove(CUSTOM_SOUND_URI_KEY)
+            } else {
+                prefs[CUSTOM_SOUND_URI_KEY] = uri
+            }
+        }
+    }
 }
 
 fun parseHistoryJson(jsonStr: String): Map<String, Set<String>> {

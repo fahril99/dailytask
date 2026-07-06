@@ -16,62 +16,77 @@ import com.example.dailyreminder.R
 
 object NotificationHelper {
 
-    const val CHANNEL_ID_REMINDER = "daily_reminder_high"
-    const val CHANNEL_ID_SILENT = "daily_reminder_silent"
-
-    /**
-     * Creates notification channels.
-     * Must be called on app start (Application.onCreate).
-     * Sound/vibration settings are read from DataStore at runtime per notification.
-     */
     fun createNotificationChannels(context: Context) {
+        // We no longer pre-create static channels because they lock the sound/vibration settings.
+        // Channels will be created dynamically just-in-time.
+    }
+
+    private fun getDynamicChannelId(
+        soundEnabled: Boolean,
+        vibrationEnabled: Boolean,
+        customSoundUri: String?
+    ): String {
+        if (!soundEnabled && !vibrationEnabled) {
+            return "daily_reminder_silent"
+        }
+        val hash = customSoundUri?.hashCode() ?: "default".hashCode()
+        return "reminder_${soundEnabled}_${vibrationEnabled}_$hash"
+    }
+
+    private fun createChannelIfNeeded(
+        context: Context,
+        channelId: String,
+        soundEnabled: Boolean,
+        vibrationEnabled: Boolean,
+        customSoundUri: String?
+    ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            // High-importance channel (sound + vibration)
-            val highChannel = NotificationChannel(
-                CHANNEL_ID_REMINDER,
-                "Pengingat Harian",
+            if (nm.getNotificationChannel(channelId) != null) {
+                return // Channel already exists
+            }
+
+            val channelName = if (!soundEnabled && !vibrationEnabled) "Pengingat Harian (Senyap)" else "Pengingat Harian"
+            val channel = NotificationChannel(
+                channelId,
+                channelName,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Notifikasi pengingat aktivitas harian"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 300, 200, 300)
-                setShowBadge(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                val defaultSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                val audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                setSound(defaultSound, audioAttributes)
+                setShowBadge(true)
+
+                if (vibrationEnabled) {
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 300, 200, 300)
+                } else {
+                    enableVibration(false)
+                    vibrationPattern = null
+                }
+
+                if (soundEnabled) {
+                    val soundUri: Uri = if (!customSoundUri.isNullOrEmpty()) {
+                        Uri.parse(customSoundUri)
+                    } else {
+                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    }
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    setSound(soundUri, audioAttributes)
+                } else {
+                    setSound(null, null)
+                }
             }
 
-            // Silent channel (no sound, no vibration)
-            val silentChannel = NotificationChannel(
-                CHANNEL_ID_SILENT,
-                "Pengingat Harian (Senyap)",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifikasi pengingat tanpa suara dan getaran"
-                enableVibration(false)
-                setSound(null, null)
-                setShowBadge(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-
-            nm.createNotificationChannel(highChannel)
-            nm.createNotificationChannel(silentChannel)
+            nm.createNotificationChannel(channel)
         }
     }
 
     /**
      * Shows a heads-up / high-priority notification for a task reminder.
-     * Sound and vibration are controlled via the channel ID chosen based on settings.
-     *
-     * @param soundEnabled  whether to use sound channel
-     * @param vibrationEnabled whether to add vibration (only meaningful pre-O; on O+ it's channel-level)
-     * @param customSoundUri optional custom sound URI saved by user
      */
     fun showTaskNotification(
         context: Context,
@@ -85,7 +100,6 @@ object NotificationHelper {
     ) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Tap opens MainActivity, which will show ConfirmationScreen via intent extra
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("SHOW_TASK_DIALOG", taskId)
@@ -103,15 +117,15 @@ object NotificationHelper {
             "Saatnya melakukan $taskTitle.\nKlik untuk membuka aplikasi."
         }
 
-        // Choose channel: use silent channel if both sound AND vibration are off
-        val channelId = if (soundEnabled || vibrationEnabled) CHANNEL_ID_REMINDER else CHANNEL_ID_SILENT
+        val channelId = getDynamicChannelId(soundEnabled, vibrationEnabled, customSoundUri)
+        createChannelIfNeeded(context, channelId, soundEnabled, vibrationEnabled, customSoundUri)
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("⏰ $taskTitle")
             .setContentText(bodyText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
-            .setPriority(NotificationCompat.PRIORITY_MAX)  // heads-up on pre-O
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
@@ -119,7 +133,6 @@ object NotificationHelper {
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setContentIntent(tapPendingIntent)
 
-        // Pre-O: apply sound/vibration manually
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             if (soundEnabled) {
                 val soundUri: Uri = if (!customSoundUri.isNullOrEmpty()) {
@@ -141,7 +154,6 @@ object NotificationHelper {
         nm.notify(notificationId, builder.build())
     }
 
-    // Legacy compatibility alias used by AlarmReceiver
     fun showNotification(
         context: Context,
         taskId: String,

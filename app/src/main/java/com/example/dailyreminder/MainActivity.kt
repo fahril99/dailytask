@@ -12,10 +12,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedContent
+import android.app.AlarmManager
+import android.content.Context
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -77,6 +83,7 @@ class MainActivity : ComponentActivity() {
     private var isBatteryOptimizationIgnored by mutableStateOf(true)
     private var batteryOptSkipped by mutableStateOf(false)
     private var showDeviceGuide by mutableStateOf(false)
+    private var showExactAlarmDialog by mutableStateOf(false)
 
     // App navigation state
     private var taskDialogId by mutableStateOf<String?>(null)
@@ -107,6 +114,18 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkBatteryOptimization()
+        checkExactAlarmPermission()
+    }
+
+    private fun checkExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                showExactAlarmDialog = true
+            } else {
+                showExactAlarmDialog = false
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -152,6 +171,34 @@ class MainActivity : ComponentActivity() {
         val soundEnabled by viewModel.soundEnabled.collectAsState()
         val vibrationEnabled by viewModel.vibrationEnabled.collectAsState()
         val stagedRemindersEnabled by viewModel.stagedRemindersEnabled.collectAsState()
+        val customSoundUri by viewModel.customSoundUri.collectAsState()
+
+        // Exact Alarm Dialog Overlay
+        if (showExactAlarmDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showExactAlarmDialog = false },
+                title = { Text("Izin Alarm Tepat Waktu") },
+                text = { Text("Aplikasi membutuhkan izin ini agar reminder bekerja secara akurat di latar belakang.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        }
+                        showExactAlarmDialog = false
+                    }) {
+                        Text("Buka Pengaturan")
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { showExactAlarmDialog = false }) {
+                        Text("Nanti")
+                    }
+                }
+            )
+        }
 
         // Overlay screens take priority
         if (taskDialogId != null) {
@@ -245,12 +292,14 @@ class MainActivity : ComponentActivity() {
             soundEnabled = soundEnabled,
             vibrationEnabled = vibrationEnabled,
             stagedRemindersEnabled = stagedRemindersEnabled,
+            customSoundUri = customSoundUri,
             nextTask = viewModel.getNextUpcomingTask(),
             minutesUntilNext = viewModel.getNextUpcomingTask()?.let { viewModel.getMinutesUntilTask(it) } ?: 0,
             onSaveSchedule = { viewModel.saveSchedule(it) },
             onSoundToggle = { viewModel.updateSoundEnabled(it) },
             onVibrationToggle = { viewModel.updateVibrationEnabled(it) },
             onStagedRemindersToggle = { viewModel.updateStagedRemindersEnabled(it) },
+            onCustomSoundUriSelected = { viewModel.updateCustomSoundUri(it) },
             onDateSelected = { viewModel.getHistoryForDate(it) },
             onShowDeviceGuide = { showDeviceGuide = true }
         )
@@ -269,12 +318,14 @@ class MainActivity : ComponentActivity() {
         soundEnabled: Boolean,
         vibrationEnabled: Boolean,
         stagedRemindersEnabled: Boolean,
+        customSoundUri: String?,
         nextTask: TaskItem?,
         minutesUntilNext: Long,
         onSaveSchedule: (String) -> Unit,
         onSoundToggle: (Boolean) -> Unit,
         onVibrationToggle: (Boolean) -> Unit,
         onStagedRemindersToggle: (Boolean) -> Unit,
+        onCustomSoundUriSelected: (String?) -> Unit,
         onDateSelected: (LocalDate) -> List<TaskItem>,
         onShowDeviceGuide: () -> Unit
     ) {
@@ -288,7 +339,9 @@ class MainActivity : ComponentActivity() {
             NavItem("Pengaturan", Icons.Default.SettingsIcon, 4)
         )
 
-        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+        val navController = rememberNavController()
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route ?: "tab_0"
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -298,9 +351,16 @@ class MainActivity : ComponentActivity() {
                     tonalElevation = 0.dp
                 ) {
                     navItems.forEach { item ->
+                        val route = "tab_${item.index}"
                         NavigationBarItem(
-                            selected = selectedTab == item.index,
-                            onClick = { selectedTab = item.index },
+                            selected = currentRoute == route,
+                            onClick = {
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
                             icon = {
                                 Icon(imageVector = item.icon, contentDescription = item.label)
                             },
@@ -308,7 +368,7 @@ class MainActivity : ComponentActivity() {
                                 Text(
                                     text = item.label,
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = if (selectedTab == item.index) FontWeight.SemiBold else FontWeight.Normal
+                                    fontWeight = if (currentRoute == route) FontWeight.SemiBold else FontWeight.Normal
                                 )
                             },
                             colors = NavigationBarItemDefaults.colors(
@@ -329,42 +389,53 @@ class MainActivity : ComponentActivity() {
                     .padding(paddingValues)
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = { fadeIn() togetherWith fadeOut() },
-                    label = "tab_transition"
-                ) { tab ->
-                    when (tab) {
-                        0 -> HomeScreen(
+                NavHost(
+                    navController = navController,
+                    startDestination = "tab_0",
+                    enterTransition = { fadeIn(animationSpec = tween(300)) },
+                    exitTransition = { fadeOut(animationSpec = tween(300)) }
+                ) {
+                    composable("tab_0") {
+                        HomeScreen(
                             scheduleText = scheduleText,
                             tasks = tasks,
                             nextTask = nextTask,
                             minutesUntilNext = minutesUntilNext,
                             currentStreak = currentStreak,
                             onSaveSchedule = onSaveSchedule,
-                            onNavigateToSettings = { selectedTab = 4 }
+                            onNavigateToSettings = { navController.navigate("tab_4") }
                         )
-                        1 -> CalendarScreen(
+                    }
+                    composable("tab_1") {
+                        CalendarScreen(
                             historyMap = historyMap,
                             onDateSelected = onDateSelected
                         )
-                        2 -> HistoryScreen(tasks = tasks)
-                        3 -> StatisticsScreen(
+                    }
+                    composable("tab_2") {
+                        HistoryScreen(tasks = tasks)
+                    }
+                    composable("tab_3") {
+                        StatisticsScreen(
                             weeklyCompleted = weeklyCompleted,
                             weeklyMissed = weeklyMissed,
                             longestStreak = longestStreak,
                             longestStreakDate = "",
                             weeklyStats = weeklyStats
                         )
-                        4 -> SettingsScreen(
+                    }
+                    composable("tab_4") {
+                        SettingsScreen(
                             soundEnabled = soundEnabled,
                             vibrationEnabled = vibrationEnabled,
                             stagedRemindersEnabled = stagedRemindersEnabled,
+                            customSoundUri = customSoundUri,
                             scheduleText = scheduleText,
                             onSoundToggle = onSoundToggle,
                             onVibrationToggle = onVibrationToggle,
                             onStagedRemindersToggle = onStagedRemindersToggle,
-                            onEditSchedule = { selectedTab = 0 },
+                            onCustomSoundUriSelected = onCustomSoundUriSelected,
+                            onEditSchedule = { navController.navigate("tab_0") },
                             onShowOptimizationGuide = onShowDeviceGuide
                         )
                     }

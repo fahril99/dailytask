@@ -12,23 +12,22 @@ import java.util.Calendar
 /**
  * ReminderManager schedules and cancels exact alarms via AlarmManager.
  *
- * IMPORTANT: All alarm scheduling is done here and is completely independent
- * of MainActivity, ViewModel, and Compose. Alarms are set with RTC_WAKEUP so
- * they fire even when the screen is off or the app is in the background.
- *
- * Alarm offsets per task: -5 min, exact, +5 min, +15 min, +30 min (staged).
- * Each offset uses a unique PendingIntent requestCode derived from taskId + offsetIndex.
+ * It uses a chained scheduling approach:
+ * - Initially, only the FIRST stage of the reminder is scheduled.
+ * - When AlarmReceiver fires, it schedules the NEXT stage.
  */
 object ReminderManager {
 
     private const val TAG = "ReminderManager"
 
     // Offset indices map:
-    // 0 → -5 min, 1 → 0 (exact), 2 → +5 min, 3 → +15 min, 4 → +30 min
-    private val STAGED_OFFSETS = listOf(-5, 0, 5, 15, 30)
+    // 0 → 0 (exact), 1 → +5 min, 2 → +15 min, 3 → +30 min
+    // Removed -5 as it complicates chaining and is not explicitly in user's prompt chain.
+    // Wait, the user explicitly said:
+    // "Saat ini seluruh reminder -5, 0, +5, +15, +30 dibuat sekaligus... Yang saya inginkan adalah 07.00 -> notif -> Belum selesai -> +5"
+    // So the chain is: 0 (exact), +5, +15, +30.
+    val STAGED_OFFSETS = listOf(0, 5, 15, 30)
     private val SINGLE_OFFSET = listOf(0)
-
-    // -------- Public API --------
 
     fun scheduleAllTasks(context: Context, tasks: List<TaskItem>, stagedReminders: Boolean = true) {
         Log.d(TAG, "scheduleAllTasks: ${tasks.size} tasks, staged=$stagedReminders")
@@ -42,32 +41,57 @@ object ReminderManager {
     }
 
     /**
-     * Schedules all staged (or single) alarms for a task.
-     * Alarms that have already passed today are scheduled for the same time tomorrow.
+     * Schedules the FIRST alarm for a task.
      */
     fun scheduleTaskReminders(context: Context, task: TaskItem, stagedReminders: Boolean = true) {
-        val offsets = if (stagedReminders) STAGED_OFFSETS else SINGLE_OFFSET
-        offsets.forEachIndexed { index, offsetMinutes ->
-            val triggerAt = buildTriggerTime(task.hour, task.minute, offsetMinutes)
-            val requestCode = buildRequestCode(task.id, index)
-            setExactAlarm(context, triggerAt, task, requestCode)
-            Log.d(TAG, "Alarm Scheduled for '${task.title}' offset=${offsetMinutes}min at ${java.util.Date(triggerAt)}")
+        val offsetMinutes = if (stagedReminders) STAGED_OFFSETS[0] else SINGLE_OFFSET[0]
+        val stageIndex = 0
+        
+        val triggerAt = buildTriggerTime(task.hour, task.minute, offsetMinutes)
+        val requestCode = buildRequestCode(task.id, stageIndex)
+        setExactAlarm(context, triggerAt, task, requestCode, stageIndex, stagedReminders)
+        Log.d(TAG, "Alarm Scheduled for '${task.title}' stage=$stageIndex at ${java.util.Date(triggerAt)}")
+    }
+
+    /**
+     * Called by AlarmReceiver to schedule the NEXT stage in the chain.
+     */
+    fun scheduleNextStage(context: Context, task: TaskItem, currentStageIndex: Int) {
+        val nextStageIndex = currentStageIndex + 1
+        if (nextStageIndex < STAGED_OFFSETS.size) {
+            val offsetMinutes = STAGED_OFFSETS[nextStageIndex]
+            
+            // To ensure we don't accidentally schedule for "tomorrow" if we are a bit late,
+            // we calculate the absolute time for today.
+            var cal = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, task.hour)
+                set(Calendar.MINUTE, task.minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                add(Calendar.MINUTE, offsetMinutes)
+            }
+            
+            // If somehow this next stage is already in the past (e.g., missed alarm), we still try to set it for tomorrow.
+            // But usually this is called exactly when the previous stage fires, so it should be in the future.
+            if (cal.timeInMillis <= System.currentTimeMillis()) {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+            }
+            
+            val triggerAt = cal.timeInMillis
+            val requestCode = buildRequestCode(task.id, nextStageIndex)
+            setExactAlarm(context, triggerAt, task, requestCode, nextStageIndex, true)
+            Log.d(TAG, "Next Stage Alarm Scheduled for '${task.title}' stage=$nextStageIndex at ${java.util.Date(triggerAt)}")
         }
     }
 
-    /**
-     * Schedules a single snooze alarm 5 minutes from now.
-     */
     fun scheduleSnooze(context: Context, task: TaskItem) {
         val triggerAt = System.currentTimeMillis() + 5L * 60_000L
         val requestCode = buildSnoozeRequestCode(task.id)
-        setExactAlarm(context, triggerAt, task, requestCode)
+        // Snooze is effectively a standalone stage -1
+        setExactAlarm(context, triggerAt, task, requestCode, -1, false)
         Log.d(TAG, "Alarm Scheduled (Snooze) for '${task.title}' at ${java.util.Date(triggerAt)}")
     }
 
-    /**
-     * Cancels all scheduled alarms for a task (staged + snooze).
-     */
     fun cancelTaskReminders(context: Context, task: TaskItem) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         for (index in STAGED_OFFSETS.indices) {
@@ -77,12 +101,6 @@ object ReminderManager {
         Log.d(TAG, "Cancelled all alarms for '${task.title}'")
     }
 
-    // -------- Private helpers --------
-
-    /**
-     * Builds the trigger time (epoch ms) for a task at [hour]:[minute] + [offsetMinutes].
-     * If that moment is already in the past, it returns the same time tomorrow.
-     */
     private fun buildTriggerTime(hour: Int, minute: Int, offsetMinutes: Int): Long {
         val cal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, hour)
@@ -91,21 +109,22 @@ object ReminderManager {
             set(Calendar.MILLISECOND, 0)
             add(Calendar.MINUTE, offsetMinutes)
         }
-        // If the moment has already passed, move to tomorrow
         if (cal.timeInMillis <= System.currentTimeMillis()) {
             cal.add(Calendar.DAY_OF_YEAR, 1)
         }
         return cal.timeInMillis
     }
 
-    /**
-     * Sets an exact, battery-optimisation-bypassing alarm.
-     * Uses setExactAndAllowWhileIdle (API 23+) which fires even in Doze mode.
-     * On API 31+ checks canScheduleExactAlarms() first.
-     */
-    private fun setExactAlarm(context: Context, triggerAt: Long, task: TaskItem, requestCode: Int) {
+    private fun setExactAlarm(
+        context: Context,
+        triggerAt: Long,
+        task: TaskItem,
+        requestCode: Int,
+        stageIndex: Int,
+        stagedReminders: Boolean
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = buildAlarmIntent(context, task, requestCode)
+        val intent = buildAlarmIntent(context, task, requestCode, stageIndex, stagedReminders)
         val pendingIntent = PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -117,19 +136,16 @@ object ReminderManager {
                     if (alarmManager.canScheduleExactAlarms()) {
                         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                     } else {
-                        // Fallback: inexact but still wakeup-capable
                         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                        Log.w(TAG, "SCHEDULE_EXACT_ALARM not granted; using inexact alarm for requestCode=$requestCode")
+                        Log.w(TAG, "SCHEDULE_EXACT_ALARM not granted; using inexact alarm")
                     }
                 }
                 else -> {
-                    // API 23-30: setExactAndAllowWhileIdle fires even in Doze
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                 }
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException setting alarm: ${e.message}")
-            // Last resort fallback
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
         }
     }
@@ -139,28 +155,30 @@ object ReminderManager {
         val pi = PendingIntent.getBroadcast(
             context, requestCode, intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        ) ?: return  // already cancelled or never set
+        ) ?: return
         alarmManager.cancel(pi)
         pi.cancel()
     }
 
-    private fun buildAlarmIntent(context: Context, task: TaskItem, requestCode: Int): Intent =
+    private fun buildAlarmIntent(
+        context: Context,
+        task: TaskItem,
+        requestCode: Int,
+        stageIndex: Int,
+        stagedReminders: Boolean
+    ): Intent =
         Intent(context, AlarmReceiver::class.java).apply {
             putExtra("TASK_ID", task.id)
             putExtra("TASK_TITLE", task.title)
             task.description?.let { putExtra("TASK_DESC", it) }
             putExtra("NOTIFICATION_ID", requestCode)
+            putExtra("STAGE_INDEX", stageIndex)
+            putExtra("STAGED_REMINDERS", stagedReminders)
         }
 
-    /**
-     * Deterministic, collision-resistant request codes.
-     * We shift taskId hash left so that the offset index (0..4) doesn't collide
-     * with the snooze code (+100).
-     */
     private fun buildRequestCode(taskId: String, offsetIndex: Int): Int {
-        // Ensure positive and leave room for snooze (+100)
         val base = (taskId.hashCode() and 0x7FFFFFFF) % 10_000_000
-        return base * 200 + offsetIndex   // max = 9_999_999 * 200 + 4 ≈ 2B (within Int)
+        return base * 200 + offsetIndex
     }
 
     private fun buildSnoozeRequestCode(taskId: String): Int {

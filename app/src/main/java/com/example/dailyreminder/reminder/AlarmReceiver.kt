@@ -17,11 +17,6 @@ import kotlinx.coroutines.launch
  * AlarmReceiver is the core of the reminder system.
  *
  * It runs completely independently of MainActivity, ViewModel, and Compose.
- * AlarmManager fires this receiver even when:
- *   - The app is in the background
- *   - The app has been removed from recent apps (as long as Android hasn't killed it)
- *   - The screen is off
- *   - The device is in Doze mode (because we use setExactAndAllowWhileIdle)
  *
  * After showing a notification, the receiver also self-reschedules the NEXT
  * staged alarm for the same task if the user hasn't completed it yet.
@@ -41,11 +36,11 @@ class AlarmReceiver : BroadcastReceiver() {
         val taskTitle = intent.getStringExtra("TASK_TITLE") ?: return
         val taskDesc = intent.getStringExtra("TASK_DESC")
         val notificationId = intent.getIntExtra("NOTIFICATION_ID", taskId.hashCode())
+        val stageIndex = intent.getIntExtra("STAGE_INDEX", 0)
+        val stagedReminders = intent.getBooleanExtra("STAGED_REMINDERS", false)
 
-        Log.d(TAG, "Alarm Received: taskId=$taskId, notificationId=$notificationId")
+        Log.d(TAG, "Alarm Received: taskId=$taskId, stageIndex=$stageIndex")
 
-        // Use a SupervisorJob so a failure doesn't cancel other coroutines.
-        // goAsync() would be ideal but increases complexity; DataStore reads are fast.
         val pendingResult = goAsync()
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -66,9 +61,9 @@ class AlarmReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                // Read settings directly from DataStore (no ViewModel needed)
                 val soundEnabled = dataStoreManager.soundEnabled.first()
                 val vibrationEnabled = dataStoreManager.vibrationEnabled.first()
+                val customSoundUri = dataStoreManager.customSoundUri.first()
 
                 NotificationHelper.showTaskNotification(
                     context = context,
@@ -77,10 +72,17 @@ class AlarmReceiver : BroadcastReceiver() {
                     taskDescription = taskDesc,
                     notificationId = notificationId,
                     soundEnabled = soundEnabled,
-                    vibrationEnabled = vibrationEnabled
+                    vibrationEnabled = vibrationEnabled,
+                    customSoundUri = customSoundUri
                 )
 
                 Log.d(TAG, "Notification Sent for '${task.title}'")
+
+                // Chain the next stage if staged reminders are enabled and this isn't a snooze(-1)
+                if (stagedReminders && stageIndex >= 0) {
+                    ReminderManager.scheduleNextStage(context, task, stageIndex)
+                }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error in AlarmReceiver coroutine: ${e.message}", e)
             } finally {
