@@ -38,7 +38,6 @@ class TaskRepository(private val dataStoreManager: DataStoreManager) {
     val soundEnabled: Flow<Boolean> = dataStoreManager.soundEnabled
     val vibrationEnabled: Flow<Boolean> = dataStoreManager.vibrationEnabled
     val stagedRemindersEnabled: Flow<Boolean> = dataStoreManager.stagedRemindersEnabled
-    val powerNapMinutes: Flow<Int> = dataStoreManager.powerNapMinutes
 
     suspend fun checkAndResetDailyTasks() {
         val today = getTodayDateString()
@@ -185,5 +184,4 @@ class TaskRepository(private val dataStoreManager: DataStoreManager) {
     suspend fun setSoundEnabled(enabled: Boolean) = dataStoreManager.setSoundEnabled(enabled)
     suspend fun setVibrationEnabled(enabled: Boolean) = dataStoreManager.setVibrationEnabled(enabled)
     suspend fun setStagedRemindersEnabled(enabled: Boolean) = dataStoreManager.setStagedRemindersEnabled(enabled)
-    suspend fun setPowerNapMinutes(minutes: Int) = dataStoreManager.setPowerNapMinutes(minutes)
 }

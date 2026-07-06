@@ -28,46 +28,16 @@ fun SettingsScreen(
     soundEnabled: Boolean,
     vibrationEnabled: Boolean,
     stagedRemindersEnabled: Boolean,
-    powerNapMinutes: Int,
+
     scheduleText: String,
     onSoundToggle: (Boolean) -> Unit,
     onVibrationToggle: (Boolean) -> Unit,
     onStagedRemindersToggle: (Boolean) -> Unit,
-    onPowerNapChange: (Int) -> Unit,
-    onEditSchedule: () -> Unit
-) {
-    var showPowerNapDialog by remember { mutableStateOf(false) }
-    var powerNapInput by remember(powerNapMinutes) { mutableStateOf(powerNapMinutes.toString()) }
 
-    if (showPowerNapDialog) {
-        AlertDialog(
-            onDismissRequest = { showPowerNapDialog = false },
-            title = { Text("Atur Power Nap Default") },
-            text = {
-                OutlinedTextField(
-                    value = powerNapInput,
-                    onValueChange = { powerNapInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Menit") },
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val mins = powerNapInput.toIntOrNull()
-                    if (mins != null && mins > 0) {
-                        onPowerNapChange(mins)
-                    }
-                    showPowerNapDialog = false
-                }) { Text("Simpan", color = Purple) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPowerNapDialog = false }) {
-                    Text("Batal", color = TextSecondary)
-                }
-            },
-            containerColor = CardDark
-        )
-    }
+    onEditSchedule: () -> Unit,
+    onShowOptimizationGuide: () -> Unit
+) {
+
 
     Column(
         modifier = Modifier
@@ -127,13 +97,15 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Waktu Istirahat Section
-        SettingsSection(title = "Waktu Istirahat") {
+
+
+        // Panduan Section
+        SettingsSection(title = "Panduan") {
             SettingsClickableItem(
                 icon = Icons.Default.SelfImprovement,
-                title = "Power Nap Default",
-                subtitle = "Durasi istirahat: $powerNapMinutes menit",
-                onClick = { showPowerNapDialog = true }
+                title = "Optimasi Perangkat",
+                subtitle = "Panduan agar aplikasi tidak dimatikan paksa",
+                onClick = onShowOptimizationGuide
             )
         }
 

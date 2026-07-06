@@ -15,6 +15,18 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 
+/**
+ * MainViewModel holds UI state and acts as a bridge between the UI and the repository.
+ *
+ * IMPORTANT: ViewModel is NOT responsible for scheduling reminders continuously.
+ * Reminders are scheduled ONCE when:
+ *   1) The user presses "Konfirmasi & Terapkan Jadwal" (via saveSchedule)
+ *   2) A task is marked completed (cancels that task's remaining alarms)
+ *   3) On device boot (BootReceiver reschedules everything)
+ *
+ * ViewModel only calls ReminderManager.scheduleAllTasks() on initial load
+ * as a safety net (e.g., first-run or after an app update).
+ */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val taskRepository = TaskRepository(DataStoreManager(application))
 
@@ -42,7 +54,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _weeklyMissed = MutableStateFlow(0)
     val weeklyMissed: StateFlow<Int> = _weeklyMissed.asStateFlow()
 
-    // Settings
     private val _soundEnabled = MutableStateFlow(true)
     val soundEnabled: StateFlow<Boolean> = _soundEnabled.asStateFlow()
 
@@ -52,24 +63,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _stagedRemindersEnabled = MutableStateFlow(true)
     val stagedRemindersEnabled: StateFlow<Boolean> = _stagedRemindersEnabled.asStateFlow()
 
-    private val _powerNapMinutes = MutableStateFlow(20)
-    val powerNapMinutes: StateFlow<Int> = _powerNapMinutes.asStateFlow()
+    // Flag: true when the initial load+schedule has been done for this session
+    private var initialScheduleDone = false
 
     init {
         viewModelScope.launch {
             taskRepository.checkAndResetDailyTasks()
 
-            launch {
-                taskRepository.scheduleTextFlow.collect { text ->
-                    _scheduleText.value = text
-                }
-            }
+            launch { taskRepository.scheduleTextFlow.collect { _scheduleText.value = it } }
 
             launch {
                 taskRepository.tasksFlow.collect { taskList ->
                     _tasks.value = taskList
-                    val staged = taskRepository.getStagedRemindersEnabled()
-                    ReminderManager.scheduleAllTasks(getApplication(), taskList, staged)
+                    // Safety-net: schedule once per session on first load so alarms are
+                    // set even if BootReceiver missed (e.g., first install, app update).
+                    if (!initialScheduleDone) {
+                        initialScheduleDone = true
+                        val staged = taskRepository.getStagedRemindersEnabled()
+                        ReminderManager.scheduleAllTasks(getApplication(), taskList, staged)
+                    }
                 }
             }
 
@@ -80,33 +92,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _longestStreak.value = taskRepository.computeLongestStreak(history)
                     _weeklyStats.value = taskRepository.computeWeeklyStats(history)
                     _weeklyCompleted.value = taskRepository.computeWeeklyTotalCompleted(history)
-                    val totalPerDay = _tasks.value.size
-                    _weeklyMissed.value = taskRepository.computeWeeklyTotalMissed(history, totalPerDay)
+                    _weeklyMissed.value = taskRepository.computeWeeklyTotalMissed(history, _tasks.value.size)
                 }
             }
 
             launch { taskRepository.soundEnabled.collect { _soundEnabled.value = it } }
             launch { taskRepository.vibrationEnabled.collect { _vibrationEnabled.value = it } }
             launch { taskRepository.stagedRemindersEnabled.collect { _stagedRemindersEnabled.value = it } }
-            launch { taskRepository.powerNapMinutes.collect { _powerNapMinutes.value = it } }
         }
     }
 
+    /**
+     * Saves the schedule text and immediately schedules all alarms.
+     * This is the primary trigger for alarm scheduling from the UI.
+     */
     fun saveSchedule(text: String) {
         viewModelScope.launch {
             taskRepository.setScheduleText(text)
+            // After saving, the tasksFlow will emit new list, but we also
+            // explicitly reschedule here for immediate effect.
+            val tasks = taskRepository.getAllTasksOnce()
+            val staged = taskRepository.getStagedRemindersEnabled()
+            ReminderManager.scheduleAllTasks(getApplication(), tasks, staged)
         }
     }
 
     fun completeTask(taskId: String) {
         viewModelScope.launch {
             taskRepository.setTaskCompleted(taskId, true)
+            // Cancel all alarms for this specific task immediately
+            val task = _tasks.value.find { it.id == taskId }
+            if (task != null) {
+                ReminderManager.cancelTaskReminders(getApplication(), task)
+            }
         }
     }
 
     fun uncompleteTask(taskId: String) {
         viewModelScope.launch {
             taskRepository.setTaskCompleted(taskId, false)
+            // Reschedule alarms for the re-enabled task
+            val task = _tasks.value.find { it.id == taskId }
+            if (task != null) {
+                val staged = taskRepository.getStagedRemindersEnabled()
+                ReminderManager.scheduleTaskReminders(getApplication(), task, staged)
+            }
         }
     }
 
@@ -128,14 +158,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateStagedRemindersEnabled(enabled: Boolean) {
-        viewModelScope.launch { taskRepository.setStagedRemindersEnabled(enabled) }
+        viewModelScope.launch {
+            taskRepository.setStagedRemindersEnabled(enabled)
+            // Reschedule all tasks with updated staged setting
+            val tasks = taskRepository.getAllTasksOnce()
+            ReminderManager.scheduleAllTasks(getApplication(), tasks, enabled)
+        }
     }
 
-    fun updatePowerNapMinutes(minutes: Int) {
-        viewModelScope.launch { taskRepository.setPowerNapMinutes(minutes) }
-    }
-
-    // --- Helpers ---
+    // ---- UI helpers ----
 
     fun getNextUpcomingTask(): TaskItem? {
         val now = LocalTime.now()
@@ -148,7 +179,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getMinutesUntilTask(task: TaskItem): Long {
         val now = LocalTime.now()
         val taskTime = LocalTime.of(task.hour, task.minute)
-        return ChronoUnit.MINUTES.between(now, taskTime)
+        return ChronoUnit.MINUTES.between(now, taskTime).coerceAtLeast(0)
     }
 
     fun getHistoryForDate(date: LocalDate): List<TaskItem> {

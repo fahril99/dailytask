@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -26,7 +25,7 @@ class DataStoreManager(private val context: Context) {
         val SOUND_ENABLED_KEY = booleanPreferencesKey("sound_enabled")
         val VIBRATION_ENABLED_KEY = booleanPreferencesKey("vibration_enabled")
         val STAGED_REMINDERS_KEY = booleanPreferencesKey("staged_reminders")
-        val POWER_NAP_KEY = intPreferencesKey("power_nap_minutes")
+
     }
 
     // --- Existing flows ---
@@ -63,9 +62,7 @@ class DataStoreManager(private val context: Context) {
         prefs[STAGED_REMINDERS_KEY] ?: true
     }
 
-    val powerNapMinutes: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[POWER_NAP_KEY] ?: 20
-    }
+
 
     // --- Task completion ---
 
@@ -140,9 +137,7 @@ class DataStoreManager(private val context: Context) {
         context.dataStore.edit { prefs -> prefs[STAGED_REMINDERS_KEY] = enabled }
     }
 
-    suspend fun setPowerNapMinutes(minutes: Int) {
-        context.dataStore.edit { prefs -> prefs[POWER_NAP_KEY] = minutes }
-    }
+
 }
 
 fun parseHistoryJson(jsonStr: String): Map<String, Set<String>> {

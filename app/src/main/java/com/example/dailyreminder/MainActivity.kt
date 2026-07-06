@@ -3,8 +3,11 @@ package com.example.dailyreminder
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,7 +25,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Settings as SettingsIcon
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -41,11 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.dailyreminder.model.TaskItem
 import com.example.dailyreminder.ui.MainViewModel
+import com.example.dailyreminder.ui.screen.BatteryOptimizationScreen
 import com.example.dailyreminder.ui.screen.CalendarScreen
 import com.example.dailyreminder.ui.screen.ConfirmationScreen
+import com.example.dailyreminder.ui.screen.DeviceOptimizationGuideScreen
 import com.example.dailyreminder.ui.screen.HistoryScreen
 import com.example.dailyreminder.ui.screen.HomeScreen
 import com.example.dailyreminder.ui.screen.PermissionScreen
@@ -56,7 +62,6 @@ import com.example.dailyreminder.ui.screen.StatisticsScreen
 import com.example.dailyreminder.ui.screen.TaskSuccessScreen
 import com.example.dailyreminder.ui.theme.CardDark
 import com.example.dailyreminder.ui.theme.DailyReminderTheme
-import com.example.dailyreminder.ui.theme.DarkSurface
 import com.example.dailyreminder.ui.theme.Purple
 import com.example.dailyreminder.ui.theme.TextSecondary
 import java.time.LocalDate
@@ -67,6 +72,11 @@ class MainActivity : ComponentActivity() {
 
     private var hasNotificationPermission by mutableStateOf(false)
     private var permissionJustGranted by mutableStateOf(false)
+
+    // Battery optimization
+    private var isBatteryOptimizationIgnored by mutableStateOf(true)
+    private var batteryOptSkipped by mutableStateOf(false)
+    private var showDeviceGuide by mutableStateOf(false)
 
     // App navigation state
     private var taskDialogId by mutableStateOf<String?>(null)
@@ -84,6 +94,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkNotificationPermission()
+        checkBatteryOptimization()
         handleIntent(intent)
 
         setContent {
@@ -91,6 +102,11 @@ class MainActivity : ComponentActivity() {
                 AppContent()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkBatteryOptimization()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -114,6 +130,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            isBatteryOptimizationIgnored = pm.isIgnoringBatteryOptimizations(packageName)
+        } else {
+            isBatteryOptimizationIgnored = true
+        }
+    }
+
     @Composable
     fun AppContent() {
         val tasks by viewModel.tasks.collectAsState()
@@ -127,7 +152,6 @@ class MainActivity : ComponentActivity() {
         val soundEnabled by viewModel.soundEnabled.collectAsState()
         val vibrationEnabled by viewModel.vibrationEnabled.collectAsState()
         val stagedRemindersEnabled by viewModel.stagedRemindersEnabled.collectAsState()
-        val powerNapMinutes by viewModel.powerNapMinutes.collectAsState()
 
         // Overlay screens take priority
         if (taskDialogId != null) {
@@ -177,6 +201,37 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        if (showDeviceGuide) {
+            DeviceOptimizationGuideScreen(onBack = { showDeviceGuide = false })
+            return
+        }
+
+        if (!isBatteryOptimizationIgnored && !batteryOptSkipped) {
+            BatteryOptimizationScreen(
+                onRequestOptimization = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                startActivity(intent)
+                            } catch (e2: Exception) {
+                                batteryOptSkipped = true
+                            }
+                        }
+                    } else {
+                        batteryOptSkipped = true
+                    }
+                },
+                onSkip = { batteryOptSkipped = true }
+            )
+            return
+        }
+
         // Main App with Bottom Navigation
         MainAppScaffold(
             tasks = tasks,
@@ -190,15 +245,14 @@ class MainActivity : ComponentActivity() {
             soundEnabled = soundEnabled,
             vibrationEnabled = vibrationEnabled,
             stagedRemindersEnabled = stagedRemindersEnabled,
-            powerNapMinutes = powerNapMinutes,
             nextTask = viewModel.getNextUpcomingTask(),
             minutesUntilNext = viewModel.getNextUpcomingTask()?.let { viewModel.getMinutesUntilTask(it) } ?: 0,
             onSaveSchedule = { viewModel.saveSchedule(it) },
             onSoundToggle = { viewModel.updateSoundEnabled(it) },
             onVibrationToggle = { viewModel.updateVibrationEnabled(it) },
             onStagedRemindersToggle = { viewModel.updateStagedRemindersEnabled(it) },
-            onPowerNapChange = { viewModel.updatePowerNapMinutes(it) },
-            onDateSelected = { viewModel.getHistoryForDate(it) }
+            onDateSelected = { viewModel.getHistoryForDate(it) },
+            onShowDeviceGuide = { showDeviceGuide = true }
         )
     }
 
@@ -215,15 +269,14 @@ class MainActivity : ComponentActivity() {
         soundEnabled: Boolean,
         vibrationEnabled: Boolean,
         stagedRemindersEnabled: Boolean,
-        powerNapMinutes: Int,
         nextTask: TaskItem?,
         minutesUntilNext: Long,
         onSaveSchedule: (String) -> Unit,
         onSoundToggle: (Boolean) -> Unit,
         onVibrationToggle: (Boolean) -> Unit,
         onStagedRemindersToggle: (Boolean) -> Unit,
-        onPowerNapChange: (Int) -> Unit,
-        onDateSelected: (LocalDate) -> List<TaskItem>
+        onDateSelected: (LocalDate) -> List<TaskItem>,
+        onShowDeviceGuide: () -> Unit
     ) {
         data class NavItem(val label: String, val icon: ImageVector, val index: Int)
 
@@ -232,11 +285,10 @@ class MainActivity : ComponentActivity() {
             NavItem("Kalender", Icons.Default.CalendarMonth, 1),
             NavItem("Riwayat", Icons.Default.History, 2),
             NavItem("Statistik", Icons.Default.BarChart, 3),
-            NavItem("Pengaturan", Icons.Default.Settings, 4)
+            NavItem("Pengaturan", Icons.Default.SettingsIcon, 4)
         )
 
         var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-        var editScheduleFromSettings by remember { mutableStateOf(false) }
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -308,13 +360,12 @@ class MainActivity : ComponentActivity() {
                             soundEnabled = soundEnabled,
                             vibrationEnabled = vibrationEnabled,
                             stagedRemindersEnabled = stagedRemindersEnabled,
-                            powerNapMinutes = powerNapMinutes,
                             scheduleText = scheduleText,
                             onSoundToggle = onSoundToggle,
                             onVibrationToggle = onVibrationToggle,
                             onStagedRemindersToggle = onStagedRemindersToggle,
-                            onPowerNapChange = onPowerNapChange,
-                            onEditSchedule = { selectedTab = 0 }
+                            onEditSchedule = { selectedTab = 0 },
+                            onShowOptimizationGuide = onShowDeviceGuide
                         )
                     }
                 }
