@@ -42,6 +42,7 @@
             android:name=".reminder.BootReceiver"
             android:enabled="true"
             android:exported="true">
+            <!-- Menjadwalkan ulang alarm saat device restart -->
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />

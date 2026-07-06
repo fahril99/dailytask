@@ -77,6 +77,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 Log.d(TAG, "Notification Sent for '${task.title}'")
 
                 // Chain the next stage if staged reminders are enabled and this isn't a snooze(-1)
+                // Memastikan hanya SATU stage berikutnya yang dijadwalkan
                 if (stagedReminders && stageIndex >= 0) {
                     ReminderManager.scheduleNextStage(context, task, stageIndex)
                 }

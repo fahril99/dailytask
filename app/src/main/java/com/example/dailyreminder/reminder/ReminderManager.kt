@@ -136,8 +136,9 @@ object ReminderManager {
                     if (alarmManager.canScheduleExactAlarms()) {
                         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                     } else {
+                        // Fallback ke inexact alarm jika user belum memberi izin
                         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                        Log.w(TAG, "SCHEDULE_EXACT_ALARM not granted; using inexact alarm")
+                        Log.w(TAG, "SCHEDULE_EXACT_ALARM not granted; using inexact alarm fallback")
                     }
                 }
                 else -> {

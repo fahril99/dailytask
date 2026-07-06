@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Refresh status baterai dan izin saat kembali dari Settings
         checkBatteryOptimization()
         checkExactAlarmPermission()
     }
