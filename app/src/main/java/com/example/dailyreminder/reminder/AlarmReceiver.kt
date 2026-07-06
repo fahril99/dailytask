@@ -10,6 +10,7 @@ import com.example.dailyreminder.storage.DataStoreManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -66,14 +67,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 // Read settings directly from DataStore (no ViewModel needed)
-                val soundEnabled = dataStoreManager.soundEnabled
-                    .let { flow ->
-                        kotlinx.coroutines.flow.first(flow)
-                    }
-                val vibrationEnabled = dataStoreManager.vibrationEnabled
-                    .let { flow ->
-                        kotlinx.coroutines.flow.first(flow)
-                    }
+                val soundEnabled = dataStoreManager.soundEnabled.first()
+                val vibrationEnabled = dataStoreManager.vibrationEnabled.first()
 
                 NotificationHelper.showTaskNotification(
                     context = context,
